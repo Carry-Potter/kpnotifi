@@ -13,15 +13,24 @@ import { sql } from '../db/index.ts';
 
 const MAX_AGE_HOURS = 24;
 
+// Napomena: KP datacenter IP adresama (Render) servira stranice BEZ kataloga
+// (rezultati pretrage rade, categories/groups su prazni). Zato sync sa
+// produkcije obično ne uspe — katalog se puni sa razvojne mašine
+// (`npm run catalog:seed`), a ovaj kod je samo pokušaj osvežavanja uz backoff.
+let failedAttemptAt = 0;
+const RETRY_AFTER_FAILURE_MS = 6 * 3_600_000;
+
 /** Osveži osnovni katalog ako je stariji od 24h (ili ga nema/prazan je). */
 export async function syncCatalogIfStale(): Promise<void> {
   const age = await catalogAgeHours();
   if (age !== null && age < MAX_AGE_HOURS) return;
+  if (Date.now() - failedAttemptAt < RETRY_AFTER_FAILURE_MS) return;
   console.log('katalog: osvežavam osnovni katalog sa KP-a...');
   // Stranica konkretne kategorije nosi isti globalni katalog, a KP je
   // pouzdanije servira (generička /pretraga ume da stigne "prazna").
   const catalog = await fetchCatalog(23);
   if (catalog.categories.length < 10 || catalog.locations.length < 10) {
+    failedAttemptAt = Date.now();
     throw new Error(
       `katalog sumnjivo prazan (${catalog.categories.length} kategorija) — ne upisujem`
     );

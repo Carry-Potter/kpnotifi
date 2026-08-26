@@ -9,6 +9,7 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "kp:probe": "node --env-file-if-exists=../.env src/kp/probe.ts",
+    "catalog:seed": "node --env-file-if-exists=../.env src/kp/seed.ts",
     "migrate": "node --env-file-if-exists=../.env src/db/migrate.ts"
   },
   "dependencies": {
