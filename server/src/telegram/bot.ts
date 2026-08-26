@@ -6,6 +6,7 @@
  * webhook-a (webhook zahtev ujedno budi uspavani Render servis).
  */
 import { Bot, InlineKeyboard } from 'grammy';
+import { requestWorkerRun } from '../github.ts';
 import { KP_BASE } from '../kp/filters.ts';
 import type { KpAd } from '../kp/types.ts';
 import {
@@ -77,6 +78,7 @@ export function setupBot(): void {
         await createSearch(user.id, feed.id, link.name);
         const session = await createSession(user.id);
         await markLinkClaimed(code, session);
+        requestWorkerRun('aktivirana pretraga'); // odmah zasej, ne čekaj cron
         await ctx.reply(
           `✅ Povezano! Pretraga „<b>${escapeHtml(link.name)}</b>" je aktivna.\n\n` +
             `Čim se pojavi nov oglas koji je pogađa, stiže ti poruka ovde — ne moraš ništa više da radiš.\n` +

@@ -1,7 +1,7 @@
 name: worker
 on:
   schedule:
-    - cron: "*/10 * * * *" # ~21s po runu -> ~1500 min/mesec, staje u besplatnih 2000 za privatni repo
+    - cron: "*/5 * * * *" # javni repo: neograničeni minuti
   workflow_dispatch:
 
 concurrency:

@@ -21,6 +21,7 @@ import {
   type SessionUser,
 } from '../db/repo.ts';
 import { getBotUsername, notifySearchCreated } from '../telegram/bot.ts';
+import { requestWorkerRun } from '../github.ts';
 
 /** Limiti — štite KP, hosting i korisnika od preširokih/prebrojnih pretraga. */
 const MAX_SEARCHES_PER_USER = Number(process.env.MAX_SEARCHES_PER_USER ?? 10);
@@ -100,6 +101,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
       // KP ovom serveru ne daje podatke (hibridni režim) — pregled izvršava
       // worker sa svoje adrese, sajt polluje GET /api/preview/:jobId
       const jobId = await createPreviewJob(params);
+      requestWorkerRun('preview');
       return { pending: true, jobId };
     }
     return buildPreviewResult(params, result);
@@ -173,6 +175,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
 
     const feed = await ensureFeed(params);
     const search = await createSearch(user.userId, feed.id, name);
+    requestWorkerRun('nova pretraga'); // odmah zasej feed, ne čekaj cron
     // potvrda u Telegram — korisnik odmah zna da je pretraga živa i šta da očekuje
     notifySearchCreated(user.telegramId, name, degraded ? -1 : result.total).catch((err) =>
       console.error('potvrda pretrage nije poslata:', err.message)

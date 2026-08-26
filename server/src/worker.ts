@@ -25,9 +25,15 @@ await sql`update feeds set paused_until = null, error_count = 0 where paused_unt
 
 // Jednoprolazni režim (GitHub Actions cron): odradi sve pa izađi.
 if (process.env.WORKER_ONCE === '1') {
-  const previews = await processPreviewJobs();
+  let previews = await processPreviewJobs();
   await syncCatalogIfStale().catch((err: any) => console.error('katalog greška:', err.message));
   const r = await tick();
+  // kratko sačekaj preglede koji stignu dok run traje (korisnik klikće na sajtu)
+  const lingerUntil = Date.now() + 25_000;
+  while (Date.now() < lingerUntil) {
+    previews += await processPreviewJobs();
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
   console.log(`WORKER_ONCE: pregleda=${previews} ${JSON.stringify(r)}`);
   await sql.end();
   process.exit(0);

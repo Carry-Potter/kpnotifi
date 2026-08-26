@@ -92,9 +92,9 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
     const myPoll = ++pollAbort.current;
     try {
       let resp = await api.preview(input);
-      // pregled radi naš worker — sačekaj rezultat (obično 2–6 s)
+      // pregled radi naš worker — obično par sekundi; preko GitHub-a do ~1 min
       if ('pending' in resp) {
-        const deadline = Date.now() + 30_000;
+        const deadline = Date.now() + 90_000;
         while (Date.now() < deadline) {
           await new Promise((r) => setTimeout(r, 1500));
           if (pollAbort.current !== myPoll) return; // korisnik je pokrenuo novu proveru

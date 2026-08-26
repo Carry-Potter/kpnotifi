@@ -21,3 +21,5 @@ services:
         sync: false # tvoj Telegram ID za alarme nadzora
       - key: POLLER_ENABLED
         value: "false" # hibridni režim: KP proveru radi worker (KP blokira DC adrese)
+      - key: GITHUB_DISPATCH_TOKEN
+        sync: false # fine-grained PAT (Actions: write) — pokreće worker na zahtev
