@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: kpnotifi
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # nalepi Neon connection string u Render dashboardu
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TICK_SECRET
+        generateValue: true
+      - key: PUBLIC_URL
+        sync: false # npr. https://kpnotifi.onrender.com (bez kose crte na kraju)
+      - key: KP_CONTACT
+        sync: false
+      - key: POLL_INTERVAL_MINUTES
+        value: "5"
+      - key: ADMIN_TELEGRAM_ID
+        sync: false # tvoj Telegram ID za alarme nadzora
