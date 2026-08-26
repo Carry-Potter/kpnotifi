@@ -222,7 +222,10 @@ export async function replaceCategoryAttributes(
 }
 
 export async function catalogAgeHours(): Promise<number | null> {
-  const rows = await sql`select updated_at from catalog_meta where key = 'base'`;
-  if (rows.length === 0) return null;
+  const rows = await sql`
+    select m.updated_at, (select count(*)::int from kp_categories) as n
+    from catalog_meta m where m.key = 'base'`;
+  // prazna tabela = nema kataloga, ma šta meta rekla (raniji upis "0 kategorija")
+  if (rows.length === 0 || Number(rows[0]!.n) === 0) return null;
   return (Date.now() - rows[0]!.updated_at.getTime()) / 3_600_000;
 }

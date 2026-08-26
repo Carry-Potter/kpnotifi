@@ -13,12 +13,19 @@ import { sql } from '../db/index.ts';
 
 const MAX_AGE_HOURS = 24;
 
-/** Osveži osnovni katalog ako je stariji od 24h (ili ga nema). */
+/** Osveži osnovni katalog ako je stariji od 24h (ili ga nema/prazan je). */
 export async function syncCatalogIfStale(): Promise<void> {
   const age = await catalogAgeHours();
   if (age !== null && age < MAX_AGE_HOURS) return;
   console.log('katalog: osvežavam osnovni katalog sa KP-a...');
-  const catalog = await fetchCatalog();
+  // Stranica konkretne kategorije nosi isti globalni katalog, a KP je
+  // pouzdanije servira (generička /pretraga ume da stigne "prazna").
+  const catalog = await fetchCatalog(23);
+  if (catalog.categories.length < 10 || catalog.locations.length < 10) {
+    throw new Error(
+      `katalog sumnjivo prazan (${catalog.categories.length} kategorija) — ne upisujem`
+    );
+  }
   await replaceCatalogBase(catalog);
   console.log(
     `katalog: ${catalog.categories.length} kategorija, ${catalog.groups.length} grupa, ${catalog.locations.length} lokacija`
