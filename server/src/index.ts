@@ -27,15 +27,26 @@ app.get('/health', async () => ({
   },
 }));
 
+// Cron servisi šalju svakakav Content-Type (npr. x-www-form-urlencoded uz prazno
+// telo) — bez ovoga Fastify vraća 415. Progutaj sve što nema svoj parser.
+app.addContentTypeParser('*', (_req, payload, done) => {
+  let data = '';
+  payload.on('data', (c) => (data += c));
+  payload.on('end', () => done(null, data || null));
+});
+
 // Spoljni cron (cron-job.org) udara ovde — ujedno budi uspavani Render servis.
-app.post('/internal/tick', async (req, reply) => {
+// GET i POST rade isto, da podešavanje crona bude što jednostavnije.
+const tickHandler = async (req: any, reply: any) => {
   const secret = (req.headers['x-tick-secret'] ?? (req.query as any)?.secret) as string;
   if (!TICK_SECRET || secret !== TICK_SECRET) {
     return reply.code(403).send({ error: 'Pogrešna tajna.' });
   }
   const report = await tick();
   return report;
-});
+};
+app.post('/internal/tick', tickHandler);
+app.get('/internal/tick', tickHandler);
 
 registerApiRoutes(app);
 
