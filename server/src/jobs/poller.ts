@@ -6,6 +6,7 @@
  */
 import { sql } from '../db/index.ts';
 import { cleanupLinkCodes } from '../db/repo.ts';
+import { syncCatalogIfStale } from '../kp/catalog.ts';
 import { searchAds } from '../kp/client.ts';
 import { buildSearchUrl, type FilterParams } from '../kp/filters.ts';
 import type { KpAd } from '../kp/types.ts';
@@ -54,6 +55,10 @@ async function tickInner(): Promise<TickReport> {
   const report: TickReport = { checkedFeeds: 0, newAds: 0, sentNotifications: 0, errors: 0 };
 
   await cleanupLinkCodes().catch(() => {}); // higijena: istekli kodovi za povezivanje
+
+  // katalog: samoizlečenje — ako startna sinhronizacija zakaže (spor cold start),
+  // pokušava se ovde dok ne uspe (interno preskače ako je katalog svež)
+  await syncCatalogIfStale().catch((err) => console.error('katalog greška:', err.message));
 
   // feedovi koji imaju bar jednu uključenu pretragu aktivnog korisnika,
   // nisu pauzirani i na redu su za proveru — najstariji prvo
