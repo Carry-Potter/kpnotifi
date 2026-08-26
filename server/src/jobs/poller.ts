@@ -5,7 +5,7 @@
  * POST /internal/tick (spoljni cron koji ujedno budi servis).
  */
 import { sql } from '../db/index.ts';
-import { cleanupLinkCodes } from '../db/repo.ts';
+import { cleanupLinkCodes, cleanupPreviewJobs } from '../db/repo.ts';
 import { syncCatalogIfStale } from '../kp/catalog.ts';
 import { searchAds } from '../kp/client.ts';
 import { buildSearchUrl, type FilterParams } from '../kp/filters.ts';
@@ -56,6 +56,7 @@ async function tickInner(): Promise<TickReport> {
   const report: TickReport = { checkedFeeds: 0, newAds: 0, sentNotifications: 0, errors: 0 };
 
   await cleanupLinkCodes().catch(() => {}); // higijena: istekli kodovi za povezivanje
+  await cleanupPreviewJobs().catch(() => {}); // higijena: stari zahtevi za pregled
 
   // katalog: samoizlečenje — ako startna sinhronizacija zakaže (spor cold start),
   // pokušava se ovde dok ne uspe (interno preskače ako je katalog svež)

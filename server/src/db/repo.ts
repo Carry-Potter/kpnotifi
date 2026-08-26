@@ -171,6 +171,40 @@ export async function cleanupLinkCodes(): Promise<void> {
   await sql`delete from link_codes where created_at < now() - interval '1 day'`;
 }
 
+// --- pregled preko workera (hibridni režim) ---
+
+export async function createPreviewJob(params: FilterParams): Promise<number> {
+  const rows = await sql`insert into preview_jobs (params) values (${sql.json(params)}) returning id`;
+  return Number(rows[0]!.id);
+}
+
+export async function getPreviewJob(
+  id: number
+): Promise<{ done: boolean; result: unknown } | null> {
+  const rows = await sql`select done_at, result from preview_jobs where id = ${id}`;
+  if (rows.length === 0) return null;
+  return { done: rows[0]!.done_at !== null, result: rows[0]!.result };
+}
+
+/** Najstariji neobrađen zahtev, ne stariji od 2 min (stare niko više ne čeka). */
+export async function takePendingPreviewJob(): Promise<{ id: number; params: FilterParams } | null> {
+  const rows = await sql`
+    select id, params from preview_jobs
+    where done_at is null and created_at > now() - interval '2 minutes'
+    order by id limit 1`;
+  if (rows.length === 0) return null;
+  return { id: Number(rows[0]!.id), params: rows[0]!.params };
+}
+
+export async function completePreviewJob(id: number, result: unknown): Promise<void> {
+  await sql`update preview_jobs set done_at = now(), result = ${sql.json(result as any)}
+            where id = ${id}`;
+}
+
+export async function cleanupPreviewJobs(): Promise<void> {
+  await sql`delete from preview_jobs where created_at < now() - interval '1 hour'`;
+}
+
 // --- katalog ---
 
 export async function replaceCatalogBase(catalog: {

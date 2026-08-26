@@ -2,15 +2,18 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { searchAds } from '../kp/client.ts';
 import { isDegradedResult } from '../kp/parser.ts';
+import { buildPreviewResult } from '../jobs/preview.ts';
 import { normalizeFilter, parseKpUrl, buildSearchUrl, type FilterParams } from '../kp/filters.ts';
 import { getCategoryAttributes, getCategoryGroups } from '../kp/catalog.ts';
 import { sql } from '../db/index.ts';
 import {
   countSearches,
   createLinkCode,
+  createPreviewJob,
   createSearch,
   deleteSearch,
   ensureFeed,
+  getPreviewJob,
   getSessionUser,
   listSearches,
   setSearchEnabled,
@@ -94,24 +97,22 @@ export function registerApiRoutes(app: FastifyInstance): void {
     }
     const result = await searchAds(params);
     if (isDegradedResult(result)) {
-      // hibridni režim: KP ovom serveru ne daje podatke — pregled nije moguć,
-      // ali snimanje jeste (worker kasnije proveri širinu filtera)
-      return { unavailable: true, params, kpUrl: buildSearchUrl(params) };
+      // KP ovom serveru ne daje podatke (hibridni režim) — pregled izvršava
+      // worker sa svoje adrese, sajt polluje GET /api/preview/:jobId
+      const jobId = await createPreviewJob(params);
+      return { pending: true, jobId };
     }
-    return {
-      params,
-      kpUrl: buildSearchUrl(params),
-      total: result.total,
-      filterName: result.filterName,
-      sample: result.ads.slice(0, 5).map((a) => ({
-        id: a.id,
-        name: a.name,
-        priceText: a.priceText,
-        location: a.location,
-        image: a.image,
-        adUrl: a.adUrl,
-      })),
-    };
+    return buildPreviewResult(params, result);
+  });
+
+  app.get('/api/preview/:jobId', async (req, reply) => {
+    if (rateLimited(req, 120)) return reply.code(429).send({ error: 'Previše pokušaja.' });
+    const id = Number((req.params as any).jobId);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'Loš id.' });
+    const job = await getPreviewJob(id);
+    if (!job) return reply.code(404).send({ error: 'Nepoznat zahtev.' });
+    if (!job.done) return { pending: true, jobId: id };
+    return job.result;
   });
 
   // --- pretrage korisnika ---

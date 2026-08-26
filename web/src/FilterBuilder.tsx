@@ -2,7 +2,7 @@
  * Builder filtera: kategorija → grupe + osnovni filteri (cena, lokacija,
  * stanje...) ili nalepljen KP link. Pre snimanja pokazuje probni rezultat.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type Category, type Group, type Location, type Preview } from './api';
 
 const CONDITIONS = [
@@ -30,6 +30,7 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
   const [categoryId, setCategoryId] = useState('');
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [keywords, setKeywords] = useState('');
+  const [searchDescription, setSearchDescription] = useState(false);
   const [priceFrom, setPriceFrom] = useState('');
   const [priceTo, setPriceTo] = useState('');
   const [currency, setCurrency] = useState('eur');
@@ -39,8 +40,11 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
   const [hasPrice, setHasPrice] = useState(false);
 
   const [preview, setPreview] = useState<Preview | null>(null);
+  /** pregled nije uspeo, ali snimanje je i dalje moguće */
+  const [previewSoftFail, setPreviewSoftFail] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const pollAbort = useRef(0);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -63,7 +67,10 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
     const p: Record<string, string> = {};
     if (categoryId) p.categoryId = categoryId;
     if (groupIds.length) p.groupId = groupIds.join(',');
-    if (keywords.trim()) p.keywords = keywords.trim();
+    if (keywords.trim()) {
+      p.keywords = keywords.trim();
+      if (searchDescription) p.keywordsScope = 'description';
+    }
     if (priceFrom) p.priceFrom = priceFrom;
     if (priceTo) p.priceTo = priceTo;
     if (priceFrom || priceTo) p.currency = currency;
@@ -72,7 +79,7 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
     if (hasPhoto) p.hasPhoto = 'yes';
     if (hasPrice) p.hasPrice = 'yes';
     return p;
-  }, [categoryId, groupIds, keywords, priceFrom, priceTo, currency, locationId, conditions, hasPhoto, hasPrice]);
+  }, [categoryId, groupIds, keywords, searchDescription, priceFrom, priceTo, currency, locationId, conditions, hasPhoto, hasPrice]);
 
   const input = mode === 'url' ? { kpUrl: kpUrl.trim() } : { params };
   const canPreview = mode === 'url' ? kpUrl.trim().length > 0 : Object.keys(params).length > 0;
@@ -81,12 +88,30 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
     setBusy(true);
     setError('');
     setPreview(null);
+    setPreviewSoftFail(false);
+    const myPoll = ++pollAbort.current;
     try {
-      setPreview(await api.preview(input));
+      let resp = await api.preview(input);
+      // pregled radi naš worker — sačekaj rezultat (obično 2–6 s)
+      if ('pending' in resp) {
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 1500));
+          if (pollAbort.current !== myPoll) return; // korisnik je pokrenuo novu proveru
+          const jobResp = await api.previewResult(resp.jobId);
+          if ('pending' in jobResp) continue;
+          if ('error' in jobResp) throw new Error('soft');
+          setPreview(jobResp);
+          return;
+        }
+        throw new Error('soft');
+      }
+      setPreview(resp);
     } catch (err: any) {
-      setError(err.message);
+      if (err.message === 'soft') setPreviewSoftFail(true);
+      else setError(err.message);
     } finally {
-      setBusy(false);
+      if (pollAbort.current === myPoll) setBusy(false);
     }
   }
 
@@ -143,6 +168,24 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
             onChange={(e) => setKeywords(e.target.value)}
             placeholder="npr. iphone 15 pro, golf 7, stan novi sad..."
           />
+          {keywords.trim() && (
+            <div className="chips" style={{ marginTop: 6 }}>
+              <button
+                type="button"
+                className={!searchDescription ? 'chip active' : 'chip'}
+                onClick={() => setSearchDescription(false)}
+              >
+                Samo u nazivu
+              </button>
+              <button
+                type="button"
+                className={searchDescription ? 'chip active' : 'chip'}
+                onClick={() => setSearchDescription(true)}
+              >
+                I u opisu oglasa
+              </button>
+            </div>
+          )}
 
           <label>Kategorija (nije obavezna — sužava pretragu)</label>
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
@@ -201,20 +244,24 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
                 ))}
               </select>
             </div>
-            <div className="grow">
-              <label>Stanje (više izbora uz Ctrl)</label>
-              <select
-                multiple
-                value={conditions}
-                onChange={(e) =>
-                  setConditions(Array.from(e.target.selectedOptions).map((o) => o.value))
+          </div>
+
+          <label>Stanje (možeš više)</label>
+          <div className="chips">
+            {CONDITIONS.map((c) => (
+              <button
+                type="button"
+                key={c.id}
+                className={conditions.includes(c.id) ? 'chip active' : 'chip'}
+                onClick={() =>
+                  setConditions((prev) =>
+                    prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id]
+                  )
                 }
               >
-                {CONDITIONS.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
-            </div>
+                {c.label}
+              </button>
+            ))}
           </div>
 
           <div className="row" style={{ marginTop: 8 }}>
@@ -239,21 +286,23 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
 
       <div className="row" style={{ marginTop: 12 }}>
         <button className="secondary" disabled={!canPreview || busy} onClick={doPreview}>
-          {busy ? 'Proveravam...' : 'Proveri filter'}
+          {busy ? 'Proveravam…' : 'Proveri filter'}
         </button>
-        <button disabled={!canPreview || busy || !preview} onClick={doSave}>
+        <button disabled={!canPreview || busy || (!preview && !previewSoftFail)} onClick={doSave}>
           Sačuvaj pretragu
         </button>
       </div>
 
-      {preview?.unavailable && (
+      {previewSoftFail && (
         <p className="muted" style={{ marginTop: 12 }}>
-          Broj oglasa trenutno ne možemo da prikažemo —{' '}
-          <a href={preview.kpUrl} target="_blank" rel="noreferrer">pogledaj rezultate na KP-u ↗</a>.
-          Slobodno sačuvaj — obaveštenja rade normalno.
+          Provera je trenutno spora — možeš odmah da sačuvaš pretragu, obaveštenja rade
+          normalno, ili{' '}
+          <a href={`https://www.kupujemprodajem.com/pretraga?${new URLSearchParams(params).toString()}`} target="_blank" rel="noreferrer">
+            pogledaj rezultate na KP-u ↗
+          </a>.
         </p>
       )}
-      {preview && !preview.unavailable && (
+      {preview && (
         <div style={{ marginTop: 12 }}>
           <p>
             <span className="badge">{preview.total.toLocaleString('sr-RS')} oglasa trenutno</span>{' '}

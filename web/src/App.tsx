@@ -132,13 +132,15 @@ const PARAM_LABELS: Record<string, string> = {
 
 function describeParams(params: Record<string, string>): string {
   const parts: string[] = [];
-  if (params.keywords) parts.push(`„${params.keywords}"`);
+  if (params.keywords) {
+    parts.push(`„${params.keywords}"${params.keywordsScope === 'description' ? ' (i u opisu)' : ''}`);
+  }
   if (params.priceFrom || params.priceTo) {
     const cur = (params.currency ?? 'eur').toUpperCase();
     parts.push(`${params.priceFrom ?? '0'}–${params.priceTo ?? '∞'} ${cur}`);
   }
   for (const [k, v] of Object.entries(params)) {
-    if (['keywords', 'priceFrom', 'priceTo', 'currency'].includes(k)) continue;
+    if (['keywords', 'keywordsScope', 'priceFrom', 'priceTo', 'currency'].includes(k)) continue;
     const label = PARAM_LABELS[k];
     if (label === undefined) parts.push(`${k}=${v}`);
     else if (label && ['hasPhoto', 'hasPrice'].includes(k)) parts.push(label);

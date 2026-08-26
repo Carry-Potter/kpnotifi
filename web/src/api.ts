@@ -66,11 +66,13 @@ export interface AttributeDef {
   data_type: string;
   ui_control: string;
 }
+export interface PendingPreview {
+  pending: true;
+  jobId: number;
+}
 export interface Preview {
   params: Record<string, string>;
   kpUrl: string;
-  /** true kad KP ne daje podatke našem serveru — pregled nedostupan, snimanje radi */
-  unavailable?: boolean;
   total: number;
   filterName: string;
   sample: {
@@ -100,7 +102,9 @@ export const api = {
   attributes: (categoryId: number) =>
     call<AttributeDef[]>('GET', `/api/catalog/categories/${categoryId}/attributes`),
   preview: (input: { params?: Record<string, string>; kpUrl?: string }) =>
-    call<Preview>('POST', '/api/preview', input),
+    call<Preview | PendingPreview>('POST', '/api/preview', input),
+  previewResult: (jobId: number) =>
+    call<Preview | PendingPreview | { error: string }>('GET', `/api/preview/${jobId}`),
   listSearches: () => call<SearchItem[]>('GET', '/api/searches'),
   createSearch: (input: { name: string; params?: Record<string, string>; kpUrl?: string }) =>
     call<{ id?: number; code?: string; telegramUrl?: string }>('POST', '/api/searches', input),
