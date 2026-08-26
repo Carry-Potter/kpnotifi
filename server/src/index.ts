@@ -11,6 +11,8 @@ import { bot, setupBot } from './telegram/bot.ts';
 import { monitor, startInternalTimer, tick } from './jobs/poller.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
+/** false na Renderu u hibridnom režimu — KP proveru radi worker sa druge mašine. */
+const POLLER_ENABLED = (process.env.POLLER_ENABLED ?? 'true') !== 'false';
 const PUBLIC_URL = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
 const TICK_SECRET = process.env.TICK_SECRET ?? '';
 
@@ -42,6 +44,8 @@ const tickHandler = async (req: any, reply: any) => {
   if (!TICK_SECRET || secret !== TICK_SECRET) {
     return reply.code(403).send({ error: 'Pogrešna tajna.' });
   }
+  // u hibridnom režimu cron samo drži servis budnim; KP proveru radi worker
+  if (!POLLER_ENABLED) return { ok: true, poller: 'disabled' };
   const report = await tick();
   return report;
 };
@@ -114,9 +118,14 @@ if (existsSync(distDir)) {
 
 await app.listen({ port: PORT, host: '0.0.0.0' });
 
-// katalog + poller posle starta (ne blokiraju server)
-syncCatalogIfStale().catch((err) => console.error('katalog greška:', err.message));
-startInternalTimer();
+// katalog + poller posle starta (ne blokiraju server); u hibridnom režimu
+// oboje radi worker na mašini čiju IP KP normalno uslužuje
+if (POLLER_ENABLED) {
+  syncCatalogIfStale().catch((err) => console.error('katalog greška:', err.message));
+  startInternalTimer();
+} else {
+  console.log('poller: isključen (POLLER_ENABLED=false) — KP proveru radi worker');
+}
 
 if (bot) {
   if (PUBLIC_URL) {

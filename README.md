@@ -61,6 +61,20 @@ npm run kp:probe -- "https://www.kupujemprodajem.com/pretraga?categoryId=23"
 > Render free se uspava posle 15 min bez saobraćaja; cron ga budi, pa provera efektivno radi
 > na ~5 min. Prvi zahtev posle buđenja ume da potraje ~30 s — to je normalno.
 
+### Hibridni režim (obavezan uz Render i slične)
+
+KP **datacenter IP adresama servira stranice bez podataka** (HTTP 200, ali prazni rezultati i
+katalog) — provereno na Renderu. Zato KP proveru radi **worker** sa mašine čija je IP adresa
+„obična" (kućna konekcija, po mogućstvu srpska):
+
+1. Na Renderu dodaj env `POLLER_ENABLED=false` (cron i dalje drži servis budnim).
+2. Na kućnoj mašini napravi `.env.worker` (Neon `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`,
+   `ADMIN_TELEGRAM_ID`) i pokreni `npm run worker`.
+3. Katalog se puni istom mašinom: `npm run catalog:seed` (jednom, pa po potrebi).
+
+Worker deli bazu i bota sa serverom: sajt/bot/prijava rade 24/7 na Renderu, a obaveštenja
+stižu dok worker mašina radi.
+
 ### Prelazak na svoj server (Oracle/VPS)
 
 Sve je u Dockeru: `docker build -t kpnotifi . && docker run --env-file .env -p 3000:3000 kpnotifi`

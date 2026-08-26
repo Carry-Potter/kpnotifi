@@ -11,7 +11,7 @@ import { searchAds } from '../kp/client.ts';
 import { buildSearchUrl, type FilterParams } from '../kp/filters.ts';
 import type { KpAd } from '../kp/types.ts';
 import { detectNewAds, parsePostedRaw } from './detect.ts';
-import { notifyAd, notifyAdmin, notifyBatch } from '../telegram/bot.ts';
+import { notifyAd, notifyAdmin, notifyBatch, notifySearchTooBroad } from '../telegram/bot.ts';
 import { createMonitor, type FailureKind } from './monitor.ts';
 import { KpHttpError } from '../kp/client.ts';
 import { KpDegradedError, KpParseError, isDegradedResult } from '../kp/parser.ts';
@@ -117,6 +117,26 @@ async function checkFeed(
   if (isDegradedResult(result)) throw new KpDegradedError();
 
   if (!feed.is_seeded) {
+    // provera širine pri seedu — snimanje bez nje prolazi kad KP ne da
+    // podatke serveru sajta (hibridni režim), pa je worker poslednja brana
+    const maxResults = Number(process.env.MAX_RESULTS_PER_SEARCH ?? 10_000);
+    if (result.total > maxResults) {
+      const subs = await sql`
+        select s.id, s.name, u.telegram_id
+        from searches s join users u on u.id = s.user_id
+        where s.feed_id = ${feed.id} and s.is_enabled`;
+      for (const sub of subs) {
+        await sql`update searches set is_enabled = false where id = ${sub.id}`;
+        await notifySearchTooBroad(
+          Number(sub.telegram_id),
+          sub.name,
+          result.total,
+          buildSearchUrl(feed.params)
+        ).catch(() => {});
+      }
+      await sql`update feeds set is_seeded = true where id = ${feed.id}`;
+      return;
+    }
     // prvi prolaz: samo zabeleži zatečeno stanje, bez poruka
     await recordSeen(feed.id, result.ads);
     await sql`update feeds set is_seeded = true where id = ${feed.id}`;

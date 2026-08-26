@@ -94,9 +94,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
     }
     const result = await searchAds(params);
     if (isDegradedResult(result)) {
-      return reply.code(503).send({
-        error: 'KP trenutno ne vraća rezultate našem serveru — pokušaj malo kasnije.',
-      });
+      // hibridni režim: KP ovom serveru ne daje podatke — pregled nije moguć,
+      // ali snimanje jeste (worker kasnije proveri širinu filtera)
+      return { unavailable: true, params, kpUrl: buildSearchUrl(params) };
     }
     return {
       params,
@@ -147,14 +147,11 @@ export function registerApiRoutes(app: FastifyInstance): void {
       }
     }
 
-    // limit: preširok filter — proveri na KP-u PRE snimanja
+    // limit: preširok filter — proveri na KP-u PRE snimanja; ako KP ovom
+    // serveru ne daje podatke (hibridni režim), proveru radi worker pri seedu
     const result = await searchAds(params);
-    if (isDegradedResult(result)) {
-      return reply.code(503).send({
-        error: 'KP trenutno ne vraća rezultate našem serveru — pokušaj malo kasnije.',
-      });
-    }
-    if (result.total > MAX_RESULTS_PER_SEARCH) {
+    const degraded = isDegradedResult(result);
+    if (!degraded && result.total > MAX_RESULTS_PER_SEARCH) {
       return reply.code(400).send({
         error:
           `Filter trenutno pogađa ${result.total.toLocaleString('sr-RS')} oglasa — preširoko je za praćenje ` +
@@ -162,7 +159,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
       });
     }
 
-    const name = (body.name ?? '').trim() || result.filterName || 'Pretraga';
+    const name =
+      (body.name ?? '').trim() || result.filterName || params.keywords || 'Pretraga';
 
     // gost: pretraga se ne snima još — dobija kod i aktivira je jednim tapom u Telegramu
     if (!user) {
@@ -175,7 +173,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
     const feed = await ensureFeed(params);
     const search = await createSearch(user.userId, feed.id, name);
     // potvrda u Telegram — korisnik odmah zna da je pretraga živa i šta da očekuje
-    notifySearchCreated(user.telegramId, name, result.total).catch((err) =>
+    notifySearchCreated(user.telegramId, name, degraded ? -1 : result.total).catch((err) =>
       console.error('potvrda pretrage nije poslata:', err.message)
     );
     return { id: search.id };

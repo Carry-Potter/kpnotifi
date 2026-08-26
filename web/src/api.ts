@@ -69,6 +69,8 @@ export interface AttributeDef {
 export interface Preview {
   params: Record<string, string>;
   kpUrl: string;
+  /** true kad KP ne daje podatke našem serveru — pregled nedostupan, snimanje radi */
+  unavailable?: boolean;
   total: number;
   filterName: string;
   sample: {

@@ -9,7 +9,8 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "kp:probe": "node --env-file-if-exists=../.env src/kp/probe.ts",
-    "catalog:seed": "node --env-file-if-exists=../.env src/kp/seed.ts",
+    "catalog:seed": "node --env-file-if-exists=../.env --env-file-if-exists=../.env.worker src/kp/seed.ts",
+    "worker": "node --env-file-if-exists=../.env --env-file-if-exists=../.env.worker src/worker.ts",
     "migrate": "node --env-file-if-exists=../.env src/db/migrate.ts"
   },
   "dependencies": {

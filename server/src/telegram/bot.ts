@@ -157,10 +157,14 @@ export async function notifySearchCreated(
   total: number
 ): Promise<void> {
   if (!bot) return;
+  const countLine =
+    total >= 0
+      ? `Trenutno postojećih oglasa: ${total.toLocaleString('sr-RS')} — za njih ti <i>neću</i> slati poruke. `
+      : `Za oglase koji već postoje ti <i>neću</i> slati poruke. `;
   await bot.api.sendMessage(
     telegramId,
     `✅ Pretraga „<b>${escapeHtml(searchName)}</b>" je aktivna.\n\n` +
-      `Trenutno postojećih oglasa: ${total.toLocaleString('sr-RS')} — za njih ti <i>neću</i> slati poruke. ` +
+      countLine +
       `Javljam se čim neko objavi <b>nov</b> oglas koji pogađa filter (proveravam na ~5 minuta).`,
     { parse_mode: 'HTML' }
   );
@@ -205,6 +209,26 @@ export async function notifyAd(
       throw err;
     }
   }
+}
+
+/** Pretraga ugašena jer je preširoka (provera pri prvom obilasku u workeru). */
+export async function notifySearchTooBroad(
+  telegramId: number,
+  searchName: string,
+  total: number,
+  kpUrl: string
+): Promise<void> {
+  if (!bot) return;
+  await bot.api.sendMessage(
+    telegramId,
+    `⚠️ Pretraga „<b>${escapeHtml(searchName)}</b>" pogađa ${total.toLocaleString('sr-RS')} oglasa — ` +
+      `preširoka je za praćenje, pa sam je isključio.\n` +
+      `Suzi filter (kategorija, cena, preciznije reči) pa napravi novu na sajtu (/sajt).`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().url('Pogledaj na KP ↗', kpUrl),
+    }
+  );
 }
 
 /** Zbirna poruka kad je novih oglasa previše za pojedinačne poruke. */

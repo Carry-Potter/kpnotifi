@@ -246,7 +246,14 @@ export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
         </button>
       </div>
 
-      {preview && (
+      {preview?.unavailable && (
+        <p className="muted" style={{ marginTop: 12 }}>
+          Broj oglasa trenutno ne možemo da prikažemo —{' '}
+          <a href={preview.kpUrl} target="_blank" rel="noreferrer">pogledaj rezultate na KP-u ↗</a>.
+          Slobodno sačuvaj — obaveštenja rade normalno.
+        </p>
+      )}
+      {preview && !preview.unavailable && (
         <div style={{ marginTop: 12 }}>
           <p>
             <span className="badge">{preview.total.toLocaleString('sr-RS')} oglasa trenutno</span>{' '}
