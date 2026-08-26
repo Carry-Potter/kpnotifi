@@ -14,12 +14,13 @@ import { detectNewAds, parsePostedRaw } from './detect.ts';
 import { notifyAd, notifyAdmin, notifyBatch } from '../telegram/bot.ts';
 import { createMonitor, type FailureKind } from './monitor.ts';
 import { KpHttpError } from '../kp/client.ts';
-import { KpParseError } from '../kp/parser.ts';
+import { KpDegradedError, KpParseError, isDegradedResult } from '../kp/parser.ts';
 
 /** Nadzor zdravlja scrapinga — alarmira admina kad KP počne da odbija/menja stranice. */
 export const monitor = createMonitor({ alert: notifyAdmin });
 
 function classifyError(err: unknown): FailureKind {
+  if (err instanceof KpDegradedError) return 'block';
   if (err instanceof KpParseError) return 'parse';
   if (err instanceof KpHttpError && (err.status === 429 || err.status === 403)) return 'block';
   return 'other';
@@ -112,6 +113,8 @@ async function checkFeed(
   report: TickReport
 ): Promise<void> {
   const result = await searchAds(feed.params);
+  // prazna ljuštura = tihi blok; bolje greška i alarm nego "zasejano 0 oglasa"
+  if (isDegradedResult(result)) throw new KpDegradedError();
 
   if (!feed.is_seeded) {
     // prvi prolaz: samo zabeleži zatečeno stanje, bez poruka

@@ -48,6 +48,57 @@ const tickHandler = async (req: any, reply: any) => {
 app.post('/internal/tick', tickHandler);
 app.get('/internal/tick', tickHandler);
 
+// Dijagnostika KP odgovora SA OVOG servera (degradirani odgovori za DC IP):
+// GET /internal/kp-test?secret=... — proba razne UA/cookie kombinacije.
+app.get('/internal/kp-test', async (req, reply) => {
+  const secret = (req.query as any)?.secret as string;
+  if (!TICK_SECRET || secret !== TICK_SECRET) return reply.code(403).send({ error: 'Ne.' });
+
+  const { parseSearchResult } = await import('./kp/parser.ts');
+  const target = 'https://www.kupujemprodajem.com/pretraga?categoryId=23&order=renewDateDesc';
+  const pureUA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  const results: Record<string, unknown> = {};
+
+  async function probe(label: string, headers: Record<string, string>) {
+    try {
+      const res = await fetch(target, { headers, signal: AbortSignal.timeout(30_000) });
+      const html = await res.text();
+      let parsed: any = null;
+      try {
+        const r = parseSearchResult(html);
+        parsed = { total: r.total, ads: r.ads.length, filterName: r.filterName.slice(0, 60) };
+      } catch (e: any) {
+        parsed = { parseError: e.message };
+      }
+      results[label] = { status: res.status, size: html.length, ...parsed };
+    } catch (e: any) {
+      results[label] = { error: e.message };
+    }
+  }
+
+  await probe('pureUA', { 'user-agent': pureUA, accept: 'text/html' });
+  try {
+    const home = await fetch('https://www.kupujemprodajem.com/', {
+      headers: { 'user-agent': pureUA, accept: 'text/html' },
+      signal: AbortSignal.timeout(30_000),
+    });
+    await home.text();
+    const cookies = (home.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
+    results.homeStatus = home.status;
+    results.homeCookieCount = (home.headers.getSetCookie?.() ?? []).length;
+    await probe('withCookies', { 'user-agent': pureUA, accept: 'text/html', cookie: cookies });
+  } catch (e: any) {
+    results.home = { error: e.message };
+  }
+  await probe('mobileUA', {
+    'user-agent':
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    accept: 'text/html',
+  });
+  return results;
+});
+
 registerApiRoutes(app);
 
 // Telegram webhook (samo u produkciji, kad postoji PUBLIC_URL)

@@ -1,6 +1,7 @@
 /** REST API za web UI. Autentikacija: Bearer token iz Telegram /start linka. */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { searchAds } from '../kp/client.ts';
+import { isDegradedResult } from '../kp/parser.ts';
 import { normalizeFilter, parseKpUrl, buildSearchUrl, type FilterParams } from '../kp/filters.ts';
 import { getCategoryAttributes, getCategoryGroups } from '../kp/catalog.ts';
 import { sql } from '../db/index.ts';
@@ -92,6 +93,11 @@ export function registerApiRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: 'Filter je prazan.' });
     }
     const result = await searchAds(params);
+    if (isDegradedResult(result)) {
+      return reply.code(503).send({
+        error: 'KP trenutno ne vraća rezultate našem serveru — pokušaj malo kasnije.',
+      });
+    }
     return {
       params,
       kpUrl: buildSearchUrl(params),
@@ -143,6 +149,11 @@ export function registerApiRoutes(app: FastifyInstance): void {
 
     // limit: preširok filter — proveri na KP-u PRE snimanja
     const result = await searchAds(params);
+    if (isDegradedResult(result)) {
+      return reply.code(503).send({
+        error: 'KP trenutno ne vraća rezultate našem serveru — pokušaj malo kasnije.',
+      });
+    }
     if (result.total > MAX_RESULTS_PER_SEARCH) {
       return reply.code(400).send({
         error:

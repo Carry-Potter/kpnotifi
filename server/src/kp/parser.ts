@@ -17,6 +17,21 @@ const NEXT_DATA_RE =
 
 export class KpParseError extends Error {}
 
+/** KP nekim (datacenter) IP adresama servira stranicu bez podataka. */
+export class KpDegradedError extends Error {
+  constructor() {
+    super('KP je vratio stranicu bez podataka (degradiran odgovor za ovu IP adresu)');
+  }
+}
+
+/**
+ * Prazna ljuštura: __NEXT_DATA__ postoji ali je search stanje prazno I nema
+ * opisa filtera. Legitimna prazna pretraga ima popunjen filterName.
+ */
+export function isDegradedResult(r: KpSearchResult): boolean {
+  return r.total === 0 && r.ads.length === 0 && r.filterName.trim() === '';
+}
+
 /** Izvuče i parsira __NEXT_DATA__ iz HTML-a. */
 export function extractNextData(html: string): any {
   const m = NEXT_DATA_RE.exec(html);
