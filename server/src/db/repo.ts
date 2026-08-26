@@ -131,6 +131,46 @@ export async function deleteSearch(userId: number, searchId: number): Promise<bo
   return true;
 }
 
+// --- kodovi za povezivanje (gost -> Telegram) ---
+
+const LINK_CODE_TTL_MINUTES = 60;
+
+export async function createLinkCode(name: string, params: FilterParams): Promise<string> {
+  const code = randomBytes(12).toString('base64url');
+  await sql`insert into link_codes (code, name, params) values (${code}, ${name}, ${sql.json(params)})`;
+  return code;
+}
+
+/** Nepotrošen i svež kod, ili null. */
+export async function findLinkCode(
+  code: string
+): Promise<{ name: string; params: FilterParams } | null> {
+  const rows = await sql`
+    select name, params from link_codes
+    where code = ${code} and claimed_at is null
+      and created_at > now() - ${LINK_CODE_TTL_MINUTES + ' minutes'}::interval`;
+  if (rows.length === 0) return null;
+  return { name: rows[0]!.name, params: rows[0]!.params };
+}
+
+export async function markLinkClaimed(code: string, sessionToken: string): Promise<void> {
+  await sql`update link_codes set claimed_at = now(), session_token = ${sessionToken}
+            where code = ${code}`;
+}
+
+/** Jednokratno: vrati token ako je kod iskorišćen, i odmah ga obriši. */
+export async function takeClaimedToken(code: string): Promise<string | null> {
+  const rows = await sql`
+    delete from link_codes
+    where code = ${code} and claimed_at is not null
+    returning session_token`;
+  return rows.length > 0 ? (rows[0]!.session_token as string) : null;
+}
+
+export async function cleanupLinkCodes(): Promise<void> {
+  await sql`delete from link_codes where created_at < now() - interval '1 day'`;
+}
+
 // --- katalog ---
 
 export async function replaceCatalogBase(catalog: {

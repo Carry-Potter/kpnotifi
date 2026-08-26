@@ -6,12 +6,14 @@ import { getCategoryAttributes, getCategoryGroups } from '../kp/catalog.ts';
 import { sql } from '../db/index.ts';
 import {
   countSearches,
+  createLinkCode,
   createSearch,
   deleteSearch,
   ensureFeed,
   getSessionUser,
   listSearches,
   setSearchEnabled,
+  takeClaimedToken,
   type SessionUser,
 } from '../db/repo.ts';
 import { getBotUsername, notifySearchCreated } from '../telegram/bot.ts';
@@ -27,6 +29,21 @@ async function auth(req: FastifyRequest): Promise<SessionUser | null> {
   return getSessionUser(token);
 }
 
+/** Prost rate limit po IP-u za javne rute (gostinski preview/snimanje). */
+const rateHits = new Map<string, { n: number; reset: number }>();
+function rateLimited(req: FastifyRequest, max: number, windowMs = 60_000): boolean {
+  const ip = req.ip;
+  const now = Date.now();
+  const h = rateHits.get(ip);
+  if (!h || now > h.reset) {
+    rateHits.set(ip, { n: 1, reset: now + windowMs });
+    if (rateHits.size > 5000) rateHits.clear(); // ne rasti u nedogled
+    return false;
+  }
+  h.n++;
+  return h.n > max;
+}
+
 export function registerApiRoutes(app: FastifyInstance): void {
   // javno: podaci za landing stranicu (link ka botu)
   app.get('/api/config', async () => ({ botUsername: getBotUsername() }));
@@ -38,36 +55,32 @@ export function registerApiRoutes(app: FastifyInstance): void {
     return { firstName: user.firstName };
   });
 
-  // --- katalog za builder ---
-  app.get('/api/catalog/categories', async (req, reply) => {
-    if (!(await auth(req))) return reply.code(401).send({ error: 'Prijava nije važeća.' });
-    const rows = await sql`select id, name from kp_categories order by name`;
-    return rows;
+  // --- katalog za builder (javno — gost pravi pretragu pre prijave) ---
+  app.get('/api/catalog/categories', async () => {
+    return sql`select id, name from kp_categories order by name`;
   });
 
-  app.get('/api/catalog/locations', async (req, reply) => {
-    if (!(await auth(req))) return reply.code(401).send({ error: 'Prijava nije važeća.' });
-    const rows = await sql`select id, name, big from kp_locations order by big desc, name`;
-    return rows;
+  app.get('/api/catalog/locations', async () => {
+    return sql`select id, name, big from kp_locations order by big desc, name`;
   });
 
   app.get('/api/catalog/categories/:id/groups', async (req, reply) => {
-    if (!(await auth(req))) return reply.code(401).send({ error: 'Prijava nije važeća.' });
     const id = Number((req.params as any).id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'Loš id.' });
     return getCategoryGroups(id);
   });
 
   app.get('/api/catalog/categories/:id/attributes', async (req, reply) => {
-    if (!(await auth(req))) return reply.code(401).send({ error: 'Prijava nije važeća.' });
     const id = Number((req.params as any).id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'Loš id.' });
     return getCategoryAttributes(id);
   });
 
-  // --- probna pretraga (pre snimanja): koliko oglasa trenutno odgovara ---
+  // --- probna pretraga (javno uz rate limit — svaki poziv je zahtev ka KP-u) ---
   app.post('/api/preview', async (req, reply) => {
-    if (!(await auth(req))) return reply.code(401).send({ error: 'Prijava nije važeća.' });
+    if (rateLimited(req, 12)) {
+      return reply.code(429).send({ error: 'Previše provera — sačekaj minut pa pokušaj ponovo.' });
+    }
     const body = req.body as { params?: FilterParams; kpUrl?: string };
     let params: FilterParams;
     try {
@@ -104,7 +117,6 @@ export function registerApiRoutes(app: FastifyInstance): void {
 
   app.post('/api/searches', async (req, reply) => {
     const user = await auth(req);
-    if (!user) return reply.code(401).send({ error: 'Prijava nije važeća.' });
     const body = req.body as { name?: string; params?: FilterParams; kpUrl?: string };
     let params: FilterParams;
     try {
@@ -115,13 +127,18 @@ export function registerApiRoutes(app: FastifyInstance): void {
     if (Object.keys(params).length === 0) {
       return reply.code(400).send({ error: 'Filter je prazan.' });
     }
+    if (!user && rateLimited(req, 6)) {
+      return reply.code(429).send({ error: 'Previše pokušaja — sačekaj minut pa pokušaj ponovo.' });
+    }
 
-    // limit: broj pretraga po korisniku
-    const existing = await countSearches(user.userId);
-    if (existing >= MAX_SEARCHES_PER_USER) {
-      return reply.code(400).send({
-        error: `Dostigao si limit od ${MAX_SEARCHES_PER_USER} pretraga. Obriši neku staru pa napravi novu.`,
-      });
+    // limit: broj pretraga po korisniku (za gosta se proverava pri povezivanju u botu)
+    if (user) {
+      const existing = await countSearches(user.userId);
+      if (existing >= MAX_SEARCHES_PER_USER) {
+        return reply.code(400).send({
+          error: `Dostigao si limit od ${MAX_SEARCHES_PER_USER} pretraga. Obriši neku staru pa napravi novu.`,
+        });
+      }
     }
 
     // limit: preširok filter — proveri na KP-u PRE snimanja
@@ -134,7 +151,16 @@ export function registerApiRoutes(app: FastifyInstance): void {
       });
     }
 
-    const name = (body.name ?? '').trim() || 'Pretraga';
+    const name = (body.name ?? '').trim() || result.filterName || 'Pretraga';
+
+    // gost: pretraga se ne snima još — dobija kod i aktivira je jednim tapom u Telegramu
+    if (!user) {
+      const code = await createLinkCode(name, params);
+      const botUsername = getBotUsername();
+      if (!botUsername) return reply.code(503).send({ error: 'Bot trenutno nije dostupan.' });
+      return { code, telegramUrl: `https://t.me/${botUsername}?start=${code}` };
+    }
+
     const feed = await ensureFeed(params);
     const search = await createSearch(user.userId, feed.id, name);
     // potvrda u Telegram — korisnik odmah zna da je pretraga živa i šta da očekuje
@@ -142,6 +168,15 @@ export function registerApiRoutes(app: FastifyInstance): void {
       console.error('potvrda pretrage nije poslata:', err.message)
     );
     return { id: search.id };
+  });
+
+  // sajt polluje dok gost ne tapne START u botu; token je jednokratan
+  app.get('/api/claim/:code', async (req, reply) => {
+    if (rateLimited(req, 60)) return reply.code(429).send({ error: 'Previše pokušaja.' });
+    const code = String((req.params as any).code ?? '');
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(code)) return reply.code(400).send({ error: 'Loš kod.' });
+    const token = await takeClaimedToken(code);
+    return token ? { claimed: true, token } : { claimed: false };
   });
 
   app.patch('/api/searches/:id', async (req, reply) => {

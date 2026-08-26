@@ -9,9 +9,14 @@ import { Bot, InlineKeyboard } from 'grammy';
 import { KP_BASE } from '../kp/filters.ts';
 import type { KpAd } from '../kp/types.ts';
 import {
+  countSearches,
+  createSearch,
   createSession,
   deactivateUser,
+  ensureFeed,
+  findLinkCode,
   listSearches,
+  markLinkClaimed,
   upsertUser,
 } from '../db/repo.ts';
 
@@ -54,6 +59,35 @@ export function setupBot(): void {
   bot.command('start', async (ctx) => {
     const from = ctx.from;
     if (!from) return;
+
+    // /start KOD — gost je napravio pretragu na sajtu; jedan tap i sve je povezano
+    const code = typeof ctx.match === 'string' ? ctx.match.trim() : '';
+    if (code) {
+      const link = await findLinkCode(code);
+      if (link) {
+        const user = await upsertUser(from);
+        const maxSearches = Number(process.env.MAX_SEARCHES_PER_USER ?? 10);
+        if ((await countSearches(user.id)) >= maxSearches) {
+          await ctx.reply(
+            `Dostigao si limit od ${maxSearches} pretraga — obriši neku na sajtu (/sajt) pa pokušaj ponovo.`
+          );
+          return;
+        }
+        const feed = await ensureFeed(link.params);
+        await createSearch(user.id, feed.id, link.name);
+        const session = await createSession(user.id);
+        await markLinkClaimed(code, session);
+        await ctx.reply(
+          `✅ Povezano! Pretraga „<b>${escapeHtml(link.name)}</b>" je aktivna.\n\n` +
+            `Čim se pojavi nov oglas koji je pogađa, stiže ti poruka ovde — ne moraš ništa više da radiš.\n` +
+            `Kartica na sajtu se prijavila sama; nove pretrage praviš tamo (/sajt).`,
+          { parse_mode: 'HTML' }
+        );
+        return;
+      }
+      // nepoznat/istekao kod -> nastavi kao običan /start
+    }
+
     const user = await upsertUser(from);
     const session = await createSession(user.id);
     await sendLoginLink(

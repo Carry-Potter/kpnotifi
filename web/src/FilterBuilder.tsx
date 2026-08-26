@@ -14,9 +14,11 @@ const CONDITIONS = [
 
 interface Props {
   onSaved: () => void;
+  /** Gostinski režim: snimanje vraća Telegram link za aktivaciju jednim tapom. */
+  onGuestSaved?: (info: { code: string; telegramUrl: string }) => void;
 }
 
-export function FilterBuilder({ onSaved }: Props) {
+export function FilterBuilder({ onSaved, onGuestSaved }: Props) {
   const [mode, setMode] = useState<'builder' | 'url'>('builder');
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -96,8 +98,12 @@ export function FilterBuilder({ onSaved }: Props) {
         preview?.filterName ||
         categories.find((c) => String(c.id) === categoryId)?.name ||
         'Pretraga';
-      await api.createSearch({ name: name.trim() || fallbackName, ...input });
-      onSaved();
+      const resp = await api.createSearch({ name: name.trim() || fallbackName, ...input });
+      if (resp.telegramUrl && resp.code) {
+        onGuestSaved?.({ code: resp.code, telegramUrl: resp.telegramUrl });
+      } else {
+        onSaved();
+      }
     } catch (err: any) {
       setError(err.message);
       setBusy(false);

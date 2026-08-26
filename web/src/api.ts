@@ -16,6 +16,10 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+export function storeToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY) ?? '';
   const res = await fetch(path, {
@@ -97,7 +101,8 @@ export const api = {
     call<Preview>('POST', '/api/preview', input),
   listSearches: () => call<SearchItem[]>('GET', '/api/searches'),
   createSearch: (input: { name: string; params?: Record<string, string>; kpUrl?: string }) =>
-    call<{ id: number }>('POST', '/api/searches', input),
+    call<{ id?: number; code?: string; telegramUrl?: string }>('POST', '/api/searches', input),
+  claim: (code: string) => call<{ claimed: boolean; token?: string }>('GET', `/api/claim/${code}`),
   toggleSearch: (id: number, isEnabled: boolean) =>
     call<{ ok: true }>('PATCH', `/api/searches/${id}`, { isEnabled }),
   deleteSearch: (id: number) => call<{ ok: true }>('DELETE', `/api/searches/${id}`),

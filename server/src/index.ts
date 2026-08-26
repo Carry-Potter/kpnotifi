@@ -72,7 +72,9 @@ if (bot) {
     await bot.api.setWebhook(`${PUBLIC_URL}/telegram/webhook`);
     console.log('telegram: webhook postavljen');
   } else {
-    bot.start(); // long polling u razvoju
+    // long polling u razvoju; pušta grešku u log umesto da obori server
+    // (npr. 409 Conflict kad je na produkciji aktivan webhook istog bota)
+    bot.start().catch((err) => console.error('telegram polling greška:', err.message));
     console.log('telegram: long polling');
   }
 }

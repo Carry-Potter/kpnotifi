@@ -5,6 +5,7 @@
  * POST /internal/tick (spoljni cron koji ujedno budi servis).
  */
 import { sql } from '../db/index.ts';
+import { cleanupLinkCodes } from '../db/repo.ts';
 import { searchAds } from '../kp/client.ts';
 import { buildSearchUrl, type FilterParams } from '../kp/filters.ts';
 import type { KpAd } from '../kp/types.ts';
@@ -51,6 +52,8 @@ export async function tick(): Promise<TickReport> {
 
 async function tickInner(): Promise<TickReport> {
   const report: TickReport = { checkedFeeds: 0, newAds: 0, sentNotifications: 0, errors: 0 };
+
+  await cleanupLinkCodes().catch(() => {}); // higijena: istekli kodovi za povezivanje
 
   // feedovi koji imaju bar jednu uključenu pretragu aktivnog korisnika,
   // nisu pauzirani i na redu su za proveru — najstariji prvo
