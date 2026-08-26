@@ -23,6 +23,16 @@ await runMigrations();
 // preuzimanje od (blokiranog) Render pollera: skini pauze nastale njegovim greškama
 await sql`update feeds set paused_until = null, error_count = 0 where paused_until is not null`;
 
+// Jednoprolazni režim (GitHub Actions cron): odradi sve pa izađi.
+if (process.env.WORKER_ONCE === '1') {
+  const previews = await processPreviewJobs();
+  await syncCatalogIfStale().catch((err: any) => console.error('katalog greška:', err.message));
+  const r = await tick();
+  console.log(`WORKER_ONCE: pregleda=${previews} ${JSON.stringify(r)}`);
+  await sql.end();
+  process.exit(0);
+}
+
 // Brza petlja (4s): zahtevi za pregled sa sajta — korisnik čeka uživo.
 // Spora petlja (POLL_INTERVAL): obilazak feedova + katalog.
 let nextTickAt = 0;

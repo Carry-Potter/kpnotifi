@@ -1,0 +1,29 @@
+name: worker
+on:
+  schedule:
+    - cron: "*/30 * * * *" # privatni repo: štedi besplatne minute; javni repo može */5
+  workflow_dispatch:
+
+concurrency:
+  group: worker
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --workspace server --omit=dev
+      - name: KP provera i obaveštenja
+        working-directory: server
+        env:
+          WORKER_ONCE: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
+        run: node src/worker.ts
