@@ -9,6 +9,7 @@ import { syncCatalogIfStale } from './kp/catalog.ts';
 import { registerApiRoutes } from './routes/api.ts';
 import { bot, setupBot } from './telegram/bot.ts';
 import { monitor, startInternalTimer, tick } from './jobs/poller.ts';
+import { isDispatchConfigured, requestWorkerRun } from './github.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
 /** false na Renderu u hibridnom režimu — KP proveru radi worker sa druge mašine. */
@@ -44,8 +45,12 @@ const tickHandler = async (req: any, reply: any) => {
   if (!TICK_SECRET || secret !== TICK_SECRET) {
     return reply.code(403).send({ error: 'Pogrešna tajna.' });
   }
-  // u hibridnom režimu cron samo drži servis budnim; KP proveru radi worker
-  if (!POLLER_ENABLED) return { ok: true, poller: 'disabled' };
+  // u hibridnom režimu cron-job.org ping ovde pokreće GitHub worker
+  // (GitHubov sopstveni cron je nepouzdan — ume da preskoči sate)
+  if (!POLLER_ENABLED) {
+    await requestWorkerRun('spoljni cron');
+    return { ok: true, poller: isDispatchConfigured() ? 'dispatched' : 'disabled (nema GITHUB_DISPATCH_TOKEN)' };
+  }
   const report = await tick();
   return report;
 };
